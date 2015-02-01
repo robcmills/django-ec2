@@ -188,23 +188,22 @@ def print_command(command):
 def logs(cmd='tail', *args):
     """
     cmd relevant logs (cat, tail, rm)
-    usage: fab logs:cat|tail|rm,[nginx|gunicorn|supervisor]
+    usage: fab logs:cat|tail|rm,[nginx|supervisor]
     """
     if not args:
-        args = ['nginx','gunicorn','supervisor']
+        args = ['nginx','supervisor']
     if 'nginx' in args:
         if exists('/var/log/nginx/access.log'):
             sudo('%s /var/log/nginx/access.log' % cmd)
         if exists('/var/log/nginx/error.log'):
             sudo('%s /var/log/nginx/error.log' % cmd)
-    if 'gunicorn' in args:
-        if exists('/var/log/supervisor/gunicorn_%s-stdout*' % env.proj_name):
-            sudo('%s /var/log/supervisor/gunicorn_%s-stdout*' % (cmd, env.proj_name))
-        if exists('/var/log/supervisor/gunicorn_%s-stderr*' % env.proj_name):
-            sudo('%s /var/log/supervisor/gunicorn_%s-stderr*' % (cmd, env.proj_name))
     if 'supervisor' in args:
         if exists('/var/log/supervisor/supervisord.log'):
             sudo('%s /var/log/supervisor/supervisord.log' % cmd)       
+        if exists('/var/log/supervisor/uwsgi_%s-stdout*' % env.proj_name):
+            sudo('%s /var/log/supervisor/uwsgi_%s-stdout*' % (cmd, env.proj_name))
+        if exists('/var/log/supervisor/uwsgi_%s-stderr*' % env.proj_name):
+            sudo('%s /var/log/supervisor/uwsgi_%s-stderr*' % (cmd, env.proj_name))           
 
 
 
@@ -304,15 +303,6 @@ def upload_template_and_reload(name):
     if reload_command:
         sudo(reload_command)
 
-
-@task
-def upload_template_and_restart(name):
-    """
-    Uploads a template only if it has changed, and if so, reload a
-    related service and then restart 
-    """
-    upload_template_and_reload(name)
-    sreload()
 
 @task
 def apt(packages):
