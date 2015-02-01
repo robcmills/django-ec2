@@ -2,7 +2,7 @@
 #################################################
 # modified version of mezzanine default fabfile #
 # configured for deployment to aws ec2          #
-# v: 1.4                                        # 
+# v: 1.3                                        # 
 # author: github.com/robcmills                  #
 #################################################
 
@@ -42,41 +42,40 @@ if sys.argv[0].split(os.sep)[-1] in ("fab", "fab-script.py"):
         exit()
 
 
-# env.db_host = conf.get("DB_HOST", None)
-# env.db_name = conf.get("DB_NAME", None)
+env.db_host = conf.get("DB_HOST", None)
+env.db_name = conf.get("DB_NAME", None)
 env.db_user = conf.get("DB_USER", None)
 env.db_pass = conf.get("DB_PASS", None)
 
-# env.admin_pass = conf.get("ADMIN_PASS", None)
-env.ec2_user = conf.get("EC2_USER", getuser()) # ubuntu
-# env.password = conf.get("SSH_PASS", None)
-env.ssh_key_path = conf.get("SSH_KEY_PATH", None)
+env.admin_pass = conf.get("ADMIN_PASS", None)
+env.user = conf.get("SSH_USER", getuser())
+env.password = conf.get("SSH_PASS", None)
+env.key_filename = conf.get("SSH_KEY_PATH", None)
 env.hosts = conf.get("HOSTS", [""])
 
 env.proj_name = conf.get("PROJECT_NAME", os.getcwd().split(os.sep)[-1])
-env.venv_home = conf.get("VIRTUALENV_HOME", "/home/%s" % env.ec2_user) # /home/ubuntu
+env.venv_home = conf.get("VIRTUALENV_HOME", "/home/%s" % env.user) # /home/ubuntu
 env.venv_path = "%s/%s" % (env.venv_home, env.proj_name) # /home/ubuntu/proj_name
-env.proj_dirname = conf.get("PROJECT_DIRNAME", "project")
+env.proj_dirname = "project"
 env.proj_path = "%s/%s" % (env.venv_path, env.proj_dirname) # /home/ubuntu/proj_name/project
 env.manage = "%s/env/bin/python %s/project/manage.py" % ((env.venv_path,) * 2)
 
 env.domains = conf.get("DOMAINS", [conf.get("LIVE_HOSTNAME", env.hosts[0])])
 env.domains_nginx = " ".join(env.domains)
 env.domains_python = ", ".join(["'%s'" % s for s in env.domains])
-# env.ssl_disabled = ""
+env.ssl_disabled = ""
 
 env.live_host = conf.get("LIVE_HOSTNAME", env.hosts[0] if env.hosts else None)
 env.repo_url = conf.get("REPO_URL", "")
 env.git = env.repo_url.startswith("git") or env.repo_url.endswith(".git")
 env.reqs_path = conf.get("REQUIREMENTS_PATH", None)
-# env.gunicorn_port = conf.get("GUNICORN_PORT", 8000)
+env.uwsgi_port = conf.get("UWSGI_PORT", 8000)
 env.locale = conf.get("LOCALE", "en_US.UTF-8")
 
 env.secret_key = conf.get("SECRET_KEY", "")
 # env.nevercache_key = conf.get("NEVERCACHE_KEY", "")
-
-# env.email_host_user = conf.get("EMAIL_HOST_USER", "")
-# env.email_host_pass = conf.get("EMAIL_HOST_PASS", "")
+env.email_host_user = conf.get("EMAIL_HOST_USER", "")
+env.email_host_pass = conf.get("EMAIL_HOST_PASS", "")
 
 
 
@@ -92,6 +91,11 @@ templates = {
     "nginx": {
         "local_path": "deploy/nginx.conf",
         "remote_path": "/etc/nginx/nginx.conf",
+        "reload_command": "sudo nginx -s reload",
+    },
+    "nginx_uwsgi": {
+        "local_path": "deploy/nginx_uwsgi.conf",
+        "remote_path": "/etc/nginx/sites-enabled/%(proj_name)s.conf",
         "reload_command": "sudo nginx -s reload",
     },
     "settings": {
@@ -184,20 +188,20 @@ def print_command(command):
 def logs(cmd='tail', *args):
     """
     cmd relevant logs (cat, tail, rm)
-    usage: fab logs:cat|tail|rm,[nginx|supervisor]
+    usage: fab logs:cat|tail|rm,[nginx|gunicorn|supervisor]
     """
     if not args:
-        args = ['nginx','supervisor']
+        args = ['nginx','gunicorn','supervisor']
     if 'nginx' in args:
         if exists('/var/log/nginx/access.log'):
             sudo('%s /var/log/nginx/access.log' % cmd)
         if exists('/var/log/nginx/error.log'):
             sudo('%s /var/log/nginx/error.log' % cmd)
-    # if 'gunicorn' in args:
-    #     if exists('/var/log/supervisor/gunicorn_%s-stdout*' % env.proj_name):
-    #         sudo('%s /var/log/supervisor/gunicorn_%s-stdout*' % (cmd, env.proj_name))
-    #     if exists('/var/log/supervisor/gunicorn_%s-stderr*' % env.proj_name):
-    #         sudo('%s /var/log/supervisor/gunicorn_%s-stderr*' % (cmd, env.proj_name))
+    if 'gunicorn' in args:
+        if exists('/var/log/supervisor/gunicorn_%s-stdout*' % env.proj_name):
+            sudo('%s /var/log/supervisor/gunicorn_%s-stdout*' % (cmd, env.proj_name))
+        if exists('/var/log/supervisor/gunicorn_%s-stderr*' % env.proj_name):
+            sudo('%s /var/log/supervisor/gunicorn_%s-stderr*' % (cmd, env.proj_name))
     if 'supervisor' in args:
         if exists('/var/log/supervisor/supervisord.log'):
             sudo('%s /var/log/supervisor/supervisord.log' % cmd)       
@@ -208,17 +212,17 @@ def logs(cmd='tail', *args):
 def conf(*args):
     """
     cat relevant config files
-    usage: fab conf[:nginx|supervisor]
+    usage: fab conf[:nginx|supervisor|gunicorn]
     """
     if not args: 
-        args = ['nginx','supervisor']
+        args = ['nginx','supervisor','gunicorn']
     if 'nginx' in args:
         sudo('cat /etc/nginx/nginx.conf')
         sudo('cat /etc/nginx/sites-enabled/%s.conf' % env.proj_name)
     if 'supervisor' in args:
         sudo('cat /etc/supervisor/conf.d/%s.conf' % env.proj_name)
-    # if 'gunicorn' in args:
-    #     sudo('cat %s/gunicorn.conf.py' % env.proj_path)       
+    if 'gunicorn' in args:
+        sudo('cat %s/gunicorn.conf.py' % env.proj_path)       
         
 
 @task
@@ -300,13 +304,6 @@ def upload_template_and_reload(name):
     if reload_command:
         sudo(reload_command)
 
-def db_pass():
-    """
-    Prompts for the database password if unknown.
-    """
-    if not env.db_pass:
-        env.db_pass = getpass("Enter the database password: ")
-    return env.db_pass
 
 @task
 def upload_template_and_restart(name):
@@ -338,6 +335,15 @@ def pip(packages):
 ############
 
 # TODO : implement these for mysql / sqlite
+
+def db_pass():
+    """
+    Prompts for the database password if unknown.
+    """
+    if not env.db_pass:
+        env.db_pass = getpass("Enter the database password: ")
+    return env.db_pass
+
 
 # def postgres(command):
 #     """
@@ -424,7 +430,7 @@ def install_server_requirements():
     Install server requirements
     """
     apt("nginx python-dev python-setuptools git-core libsqlite3-dev sqlite3 "
-        "libjpeg-dev libpq-dev memcached supervisor")
+        "libjpeg-dev libpq-dev supervisor")
     sudo("easy_install pip")
     sudo("pip install virtualenv")
 

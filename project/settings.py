@@ -22,6 +22,7 @@ DEBUG = True
 TEMPLATE_DEBUG = True
 
 ALLOWED_HOSTS = [
+    '54.153.22.136',
     'ec2-54-153-22-136.us-west-1.compute.amazonaws.com',
     '127.0.0.1',
 ]
